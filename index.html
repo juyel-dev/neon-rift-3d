@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070f" />
+    <meta
+      name="description"
+      content="NEON RIFT: LAST LIGHT - a first-person 3D sci-fi arena survival shooter built with Three.js, TypeScript and Vite."
+    />
+    <title>NEON RIFT: LAST LIGHT</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene" aria-label="Neon Rift 3D viewport"></canvas>
+
+      <div id="scanlines" aria-hidden="true"></div>
+      <div id="vignette" aria-hidden="true"></div>
+      <div id="damage-vignette" aria-hidden="true"></div>
+      <div id="low-health" aria-hidden="true"></div>
+
+      <!-- ------------------------------------------------------- in-game HUD -->
+      <section id="hud" class="layer" aria-live="off" hidden>
+        <header id="hud-top">
+          <div class="hud-panel" id="hud-wave">
+            <span class="hud-label">WAVE</span>
+            <span class="hud-value" id="hud-wave-value">1</span>
+            <span class="hud-sub" id="hud-enemies">0 HOSTILES</span>
+          </div>
+          <div class="hud-panel hud-panel-center">
+            <span class="hud-label">SCORE</span>
+            <span class="hud-value" id="hud-score">0</span>
+            <span class="hud-sub" id="hud-multiplier">x1.0</span>
+          </div>
+          <div class="hud-panel hud-panel-right">
+            <span class="hud-label">BEST</span>
+            <span class="hud-value" id="hud-best">0</span>
+            <span class="hud-sub" id="hud-accuracy">ACC 0%</span>
+          </div>
+        </header>
+
+        <div id="crosshair" aria-hidden="true">
+          <span class="ch-line ch-top"></span>
+          <span class="ch-line ch-bottom"></span>
+          <span class="ch-line ch-left"></span>
+          <span class="ch-line ch-right"></span>
+          <span class="ch-dot"></span>
+          <span id="hitmarker" aria-hidden="true"></span>
+        </div>
+
+        <div id="objective" class="hud-panel">
+          <span id="objective-text">ELIMINATE ALL HOSTILES</span>
+          <span id="objective-timer"></span>
+        </div>
+
+        <div id="banner" aria-hidden="true"><span id="banner-text"></span></div>
+        <ul id="killfeed" aria-live="polite"></ul>
+
+        <footer id="hud-bottom">
+          <div class="hud-panel" id="hud-health">
+            <div class="hud-row">
+              <span class="hud-label">SHIELD</span>
+              <span class="hud-value" id="hud-health-value">100</span>
+            </div>
+            <div class="bar"><div class="bar-fill bar-health" id="hud-health-bar"></div></div>
+          </div>
+
+          <div class="hud-panel hud-panel-weapon">
+            <div class="hud-row">
+              <span class="hud-label">PULSE RIFLE</span>
+              <span class="hud-value mono" id="hud-ammo">30 / 180</span>
+            </div>
+            <div class="bar"><div class="bar-fill bar-ammo" id="hud-ammo-bar"></div></div>
+            <div id="hud-reload" hidden>RELOADING</div>
+          </div>
+
+          <div class="hud-panel hud-panel-abilities">
+            <div class="ability" id="ability-dash">
+              <span class="hud-label">DASH <kbd>SPACE</kbd></span>
+              <div class="bar bar-small"><div class="bar-fill bar-dash" id="hud-dash-bar"></div></div>
+            </div>
+            <div class="ability" id="ability-overdrive">
+              <span class="hud-label">OVERDRIVE <kbd>Q</kbd></span>
+              <div class="bar bar-small"><div class="bar-fill bar-overdrive" id="hud-overdrive-bar"></div></div>
+            </div>
+          </div>
+        </footer>
+      </section>
+
+      <!-- ---------------------------------------------------------- screens -->
+      <section id="title-screen" class="screen" role="dialog" aria-label="Title screen">
+        <div class="screen-inner">
+          <p class="kicker">SECTOR 7 // RESEARCH FACILITY</p>
+          <h1 class="title">
+            <span class="title-line">NEON RIFT</span>
+            <span class="title-sub">LAST LIGHT</span>
+          </h1>
+          <p class="tagline">
+            The reactors are dark and the machines are awake. Survive the waves, harvest energy, upgrade your rig.
+          </p>
+
+          <div class="menu">
+            <button class="btn btn-primary" id="btn-start" type="button">START GAME</button>
+            <button class="btn" id="btn-how-to" type="button">CONTROLS</button>
+          </div>
+
+          <div class="controls-grid" id="controls-grid">
+            <div class="control"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move</span></div>
+            <div class="control"><kbd>MOUSE</kbd><span>Aim</span></div>
+            <div class="control"><kbd>LMB</kbd><span>Fire</span></div>
+            <div class="control"><kbd>SHIFT</kbd><span>Sprint</span></div>
+            <div class="control"><kbd>SPACE</kbd><span>Dash</span></div>
+            <div class="control"><kbd>R</kbd><span>Reload</span></div>
+            <div class="control"><kbd>Q</kbd><span>Overdrive</span></div>
+            <div class="control"><kbd>ESC</kbd><span>Pause</span></div>
+          </div>
+
+          <div class="settings" id="title-settings">
+            <label class="setting">
+              <span>SOUND</span>
+              <button class="toggle" id="toggle-sound-title" type="button" role="switch" aria-checked="true">ON</button>
+            </label>
+            <label class="setting">
+              <span>GRAPHICS</span>
+              <select id="select-quality" class="select">
+                <option value="high">HIGH</option>
+                <option value="medium" selected>MEDIUM</option>
+                <option value="low">LOW</option>
+              </select>
+            </label>
+            <label class="setting">
+              <span>SENSITIVITY</span>
+              <input id="range-sensitivity" class="range" type="range" min="0.0006" max="0.005" step="0.0002" value="0.0022" />
+            </label>
+          </div>
+
+          <p class="best-line">BEST SCORE <strong id="title-best">0</strong></p>
+          <p class="note" id="desktop-note">
+            Desktop recommended: this build needs a keyboard and a mouse. Touch devices get a read-only view.
+          </p>
+        </div>
+      </section>
+
+      <section id="pause-screen" class="screen" role="dialog" aria-label="Paused" hidden>
+        <div class="screen-inner screen-narrow">
+          <h2 class="screen-title">PAUSED</h2>
+          <p class="tagline">The facility is holding its breath.</p>
+          <div class="menu">
+            <button class="btn btn-primary" id="btn-resume" type="button">RESUME</button>
+            <button class="btn" id="btn-restart-pause" type="button">RESTART RUN</button>
+            <button class="btn btn-ghost" id="btn-quit" type="button">ABANDON RUN</button>
+          </div>
+          <div class="settings">
+            <label class="setting">
+              <span>SOUND</span>
+              <button class="toggle" id="toggle-sound-pause" type="button" role="switch" aria-checked="true">ON</button>
+            </label>
+            <label class="setting">
+              <span>SENSITIVITY</span>
+              <input id="range-sensitivity-pause" class="range" type="range" min="0.0006" max="0.005" step="0.0002" />
+            </label>
+          </div>
+          <p class="note">Press <kbd>ESC</kbd> again to return to the fight.</p>
+        </div>
+      </section>
+
+      <section id="upgrade-screen" class="screen" role="dialog" aria-label="Choose an upgrade" hidden>
+        <div class="screen-inner screen-wide">
+          <p class="kicker" id="upgrade-kicker">WAVE 1 CLEARED</p>
+          <h2 class="screen-title">CHOOSE AN UPGRADE</h2>
+          <div class="cards" id="upgrade-cards"></div>
+          <div class="menu">
+            <button class="btn btn-ghost" id="btn-skip-upgrade" type="button">SKIP (NO BONUS)</button>
+          </div>
+          <p class="note">Press <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> or click a card.</p>
+        </div>
+      </section>
+
+      <section id="gameover-screen" class="screen" role="dialog" aria-label="Run complete" hidden>
+        <div class="screen-inner screen-narrow">
+          <p class="kicker" id="gameover-kicker">SIGNAL LOST</p>
+          <h2 class="screen-title">RUN TERMINATED</h2>
+          <div class="stats-grid">
+            <div class="stat"><span>SCORE</span><strong id="final-score">0</strong></div>
+            <div class="stat"><span>BEST</span><strong id="final-best">0</strong></div>
+            <div class="stat"><span>WAVE</span><strong id="final-wave">1</strong></div>
+            <div class="stat"><span>KILLS</span><strong id="final-kills">0</strong></div>
+            <div class="stat"><span>ACCURACY</span><strong id="final-accuracy">0%</strong></div>
+            <div class="stat"><span>TIME</span><strong id="final-time">0:00</strong></div>
+          </div>
+          <p class="best-line" id="new-best" hidden>NEW PERSONAL BEST</p>
+          <div class="menu">
+            <button class="btn btn-primary" id="btn-restart" type="button">RUN IT AGAIN</button>
+            <button class="btn btn-ghost" id="btn-title" type="button">MAIN MENU</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="pointerlock-screen" class="screen screen-translucent" role="dialog" aria-label="Mouse capture required" hidden>
+        <div class="screen-inner screen-narrow">
+          <h2 class="screen-title">MOUSE CAPTURE REQUIRED</h2>
+          <p class="tagline">
+            Click to capture the mouse and aim. Press <kbd>ESC</kbd> to release it and pause the run at any time.
+          </p>
+          <div class="menu"><button class="btn btn-primary" id="btn-relock" type="button">CLICK TO AIM</button></div>
+        </div>
+      </section>
+
+      <section id="loading-screen" class="screen" role="status">
+        <div class="screen-inner screen-narrow">
+          <h2 class="screen-title">CALIBRATING SYSTEMS</h2>
+          <div class="bar bar-loading"><div class="bar-fill bar-loading-fill" id="loading-bar"></div></div>
+          <p class="note" id="loading-note">Building the rift...</p>
+        </div>
+      </section>
+
+      <section id="error-screen" class="screen" role="alert" hidden>
+        <div class="screen-inner screen-narrow">
+          <h2 class="screen-title">UNABLE TO START</h2>
+          <p class="tagline" id="error-message">
+            This browser could not initialise WebGL. NEON RIFT needs WebGL2 and hardware acceleration enabled.
+          </p>
+          <p class="note">
+            Try a recent Chrome, Edge, Firefox or Safari build, and make sure hardware acceleration is switched on.
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
