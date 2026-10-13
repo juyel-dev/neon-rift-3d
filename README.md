@@ -9,7 +9,9 @@ Built from scratch with **Three.js**, **TypeScript**, **Vite** and the
 **Web Audio API**. No backend, no API keys, no downloaded assets: every mesh,
 texture, particle and sound is generated procedurally at runtime.
 
-> Play it in the browser (GitHub Pages): `https://<owner>.github.io/neon-rift-3d/`
+> Play it in the browser (GitHub Pages): https://juyel-dev.github.io/neon-rift-3d/
+>
+> Repository: https://github.com/juyel-dev/neon-rift-3d
 
 ---
 
