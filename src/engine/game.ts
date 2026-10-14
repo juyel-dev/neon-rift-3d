@@ -71,6 +71,11 @@ export class Game {
   private shake = 0;
   private shakeTime = 0;
   private fovKick = 0;
+  private baseFov = 76;
+  private renderScale = 1;
+  private adaptTimer = 0;
+  private adaptLocked = false;
+  private pendingCheck: { previousScale: number; fpsBefore: number } | null = null;
   private ready = false;
   private pointerLockWasPlaying = false;
   private readonly lookScratch = new Vector3();
@@ -111,11 +116,7 @@ export class Game {
     this.scene.fog = new FogExp2(PALETTE.deep, 0.021);
     // Image-based lighting so metals have something to reflect (a scene with
     // no environment renders metals near-black regardless of direct lights).
-    const pmrem = new PMREMGenerator(renderer);
-    const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environment = environment;
-    this.scene.environmentIntensity = 0.32;
-    pmrem.dispose();
+    this.buildEnvironment();
 
     this.camera.rotation.order = 'YXZ';
     this.camera.position.set(0, WORLD.eyeHeight + 1.25, 8);
@@ -169,6 +170,8 @@ export class Game {
     this.resize();
     this.ready = true;
     this.screens.hideLoading();
+    // The loop runs from the start so the title screen shows the live arena.
+    this.start();
   }
 
   private createRenderer(): WebGLRenderer {
@@ -184,6 +187,42 @@ export class Game {
       throw new Error(`WebGL renderer unavailable: ${(error as Error).message}`);
     }
   }
+
+  /** (Re)builds the reflection environment. Needed again after a context restore. */
+  private buildEnvironment(): void {
+    const renderer = this.renderer;
+    if (!renderer) return;
+    const previous = this.scene.environment;
+    const pmrem = new PMREMGenerator(renderer);
+    const room = new RoomEnvironment();
+    this.scene.environment = pmrem.fromScene(room, 0.04).texture;
+    this.scene.environmentIntensity = 0.32;
+    this.viewScene.environment = this.scene.environment;
+    pmrem.dispose();
+    room.dispose();
+    previous?.dispose();
+  }
+
+  private setContextBanner(visible: boolean): void {
+    const banner = this.container.querySelector<HTMLElement>('#context-lost');
+    if (banner) banner.hidden = !visible;
+  }
+
+  private readonly handleContextLost = (event: Event): void => {
+    // preventDefault tells the browser we want a webglcontextrestored event.
+    event.preventDefault();
+    if (this.sim.state === 'playing') this.pause();
+    this.stop();
+    this.setContextBanner(true);
+  };
+
+  private readonly handleContextRestored = (): void => {
+    this.buildEnvironment();
+    this.setupComposer();
+    this.resize();
+    this.setContextBanner(false);
+    this.start();
+  };
 
   private setupComposer(): void {
     const renderer = this.renderer;
@@ -213,9 +252,11 @@ export class Game {
     window.addEventListener('orientationchange', this.handleResize);
     document.addEventListener('visibilitychange', this.handleVisibility);
     window.addEventListener('beforeunload', this.handleUnload);
+    this.canvas.addEventListener('webglcontextlost', this.handleContextLost);
+    this.canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
 
     this.screens.setUpgradeHandler((id) => {
-      this.sim.chooseUpgrade(id);
+      if (!this.sim.chooseUpgrade(id)) return;
       this.audio.play('upgrade');
       this.requestPointerLock();
     });
@@ -271,7 +312,8 @@ export class Game {
     this.lastFrame = now;
     // Clamp deltas after tab suspension so physics never explodes.
     const dt = clamp(rawDelta, 0, MAX_DELTA);
-    this.frameTimes.push(rawDelta);
+    // Ignore long stalls (tab switches, GC) so they never skew the FPS estimate.
+    if (rawDelta < 0.25) this.frameTimes.push(rawDelta);
     if (this.frameTimes.length > 120) this.frameTimes.shift();
     if (this.frameTimes.length >= 30) {
       const sum = this.frameTimes.reduce((total, value) => total + value, 0);
@@ -279,22 +321,21 @@ export class Game {
     }
     this.elapsed += dt;
     this.update(dt);
+    this.adaptResolution(dt);
     this.render();
   };
 
   /** One simulation + rendering step (exposed for browser automation). */
   update(dt: number): void {
     const input = this.input.consume();
-    const sensitivity = this.settings.get().sensitivity;
-    input.yawDelta *= sensitivity / 0.0022;
-    input.pitchDelta *= sensitivity / 0.0022;
 
     this.sim.update(dt, input);
     this.handleEvents(this.sim.drainEvents());
 
     const state = this.sim.state;
     if (state === 'title') {
-      this.updateAttractCamera(dt);
+      this.updateAttractCamera();
+      this.arenaView?.update(this.elapsed);
     } else {
       this.updateCamera(dt);
       this.hud.update(this.sim.getHudSnapshot(), this.sim.waveIntroRemaining, this.sim.wave.totalEnemies);
@@ -304,18 +345,16 @@ export class Game {
       this.arenaView?.update(this.elapsed);
     }
 
-    if (this.sim.state === 'gameover') this.handleGameOver();
   }
 
-  private updateAttractCamera(dt: number): void {
-    const player = this.sim.player;
-    const target = this.sim.cameraPosition(this.lookScratch as unknown as Vec3);
-    this.camera.position.set(target.x, target.y + 2.4, target.z);
-    const yaw = this.sim.player.yaw + Math.PI;
-    const pitch = -0.16;
-    this.camera.rotation.set(pitch, yaw, 0, 'YXZ');
-    void player;
-    void dt;
+  /** Title-screen backdrop: a slow cinematic orbit around the reactor core. */
+  private updateAttractCamera(): void {
+    const angle = this.elapsed * 0.11;
+    const radius = 24;
+    this.camera.position.set(Math.cos(angle) * radius, 10.5 + Math.sin(this.elapsed * 0.23) * 0.8, Math.sin(angle) * radius);
+    this.camera.lookAt(0, 1.6, 0);
+    this.camera.fov = this.baseFov;
+    this.camera.updateProjectionMatrix();
   }
 
   private updateCamera(dt: number): void {
@@ -335,7 +374,7 @@ export class Game {
 
     this.fovKick = damp(this.fovKick, 0, 0.12, dt);
     const overdrive = this.sim.weapon.overdriveActive ? 4 : 0;
-    this.camera.fov = 76 + this.fovKick + overdrive;
+    this.camera.fov = this.baseFov + this.fovKick + overdrive;
     this.camera.updateProjectionMatrix();
 
     this.camera.rotation.set(player.aimPitch(), player.aimYaw(), 0, 'YXZ');
@@ -375,7 +414,7 @@ export class Game {
     }
 
     const weaponView = this.weaponView;
-    if (weaponView) {
+    if (weaponView && this.sim.state !== 'title') {
       renderer.autoClear = false;
       renderer.clearDepth();
       renderer.render(this.viewScene, weaponView.camera);
@@ -591,10 +630,12 @@ export class Game {
     if (state === 'title') {
       this.screens.showTitle(this.settings.get().bestScore);
       this.hud.hide();
-      this.stop();
+      this.fx?.clear();
+      this.enemyViews?.clear();
     }
     if (state === 'gameover') {
       this.input.releasePointerLock();
+      this.handleGameOver();
     }
   }
 
@@ -612,11 +653,6 @@ export class Game {
       time: snapshot.elapsed,
       newBest,
     });
-    this.handleGameOver = this.handleGameOverOnce;
-  }
-
-  private handleGameOverOnce(): void {
-    /* the game over UI is only built once per run */
   }
 
   // ------------------------------------------------------------- user input
@@ -635,18 +671,20 @@ export class Game {
     }
   }
 
+  /** Declines the upgrade offer (no bonus) and carries on to the next wave. */
+  skipUpgrade(): void {
+    if (this.sim.skipUpgrade()) this.requestPointerLock();
+  }
+
   togglePause(): void {
     if (this.sim.state === 'playing') this.pause();
     else if (this.sim.state === 'paused') this.resume();
-    else if (this.sim.state === 'gameover') this.startRun();
-    else if (this.sim.state === 'title') this.startRun();
   }
 
   returnToTitle(): void {
     this.sim.returnToTitle();
     this.hud.hide();
     this.input.releasePointerLock();
-    this.stop();
   }
 
   restart(): void {
@@ -679,22 +717,69 @@ export class Game {
   applySettings(): void {
     const settings = this.settings.get();
     this.input.sensitivity = settings.sensitivity;
+    this.baseFov = settings.fov;
+    this.audio.setVolume(settings.volume);
     const preset = presetFor(settings.quality);
     if (preset !== this.preset) {
       this.preset = preset;
+      this.renderScale = 1;
+      this.adaptLocked = false;
+      this.pendingCheck = null;
       if (this.renderer) {
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, preset.pixelRatio));
         this.renderer.shadowMap.enabled = preset.shadows;
-        this.scene.traverse((object) => {
-          const mesh = object as { material?: unknown };
-          void mesh;
-        });
+        this.applyPixelRatio();
       }
       this.setupComposer();
       this.resize();
     }
     this.audio.setEnabled(settings.soundEnabled);
     this.syncSettingsUi();
+  }
+
+  private applyPixelRatio(): void {
+    if (!this.renderer) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, this.preset.pixelRatio) * this.renderScale;
+    this.renderer.setPixelRatio(ratio);
+    this.composer?.setPixelRatio(ratio);
+    this.resize();
+  }
+
+  /**
+   * Dynamic resolution. When the frame rate stays low the render scale steps
+   * down (never below 60%) and creeps back up with headroom. Each downscale is
+   * checked: if FPS did not improve noticeably the bottleneck is not pixel
+   * fill (CPU, a refresh-rate cap, throttling), so the change is reverted and
+   * adaptation stops until the quality preset changes.
+   */
+  private adaptResolution(dt: number): void {
+    if (this.adaptLocked || this.sim.state !== 'playing') return;
+    this.adaptTimer += dt;
+    if (this.adaptTimer < 2 || this.frameTimes.length < 60) return;
+    this.adaptTimer = 0;
+    const fps = this.measuredFps;
+
+    if (this.pendingCheck) {
+      const { previousScale, fpsBefore } = this.pendingCheck;
+      this.pendingCheck = null;
+      if (fps < fpsBefore * 1.12) {
+        this.adaptLocked = true;
+        this.setRenderScale(previousScale);
+        return;
+      }
+    }
+
+    let next = this.renderScale;
+    if (fps < 42) next = Math.max(0.6, this.renderScale - 0.15);
+    else if (fps > 57) next = Math.min(1, this.renderScale + 0.1);
+    if (Math.abs(next - this.renderScale) < 1e-3) return;
+    if (next < this.renderScale) this.pendingCheck = { previousScale: this.renderScale, fpsBefore: fps };
+    this.setRenderScale(next);
+  }
+
+  private setRenderScale(scale: number): void {
+    this.renderScale = scale;
+    this.frameTimes.length = 0;
+    this.applyPixelRatio();
   }
 
   private syncSettingsUi(): void {
@@ -708,9 +793,16 @@ export class Game {
     }
     const quality = this.container.querySelector<HTMLSelectElement>('#select-quality');
     if (quality) quality.value = settings.quality;
-    for (const id of ['range-sensitivity', 'range-sensitivity-pause']) {
-      const range = this.container.querySelector<HTMLInputElement>(`#${id}`);
-      if (range) range.value = String(settings.sensitivity);
+    const ranges: Array<[string[], number]> = [
+      [['range-sensitivity', 'range-sensitivity-pause'], settings.sensitivity],
+      [['range-volume', 'range-volume-pause'], settings.volume],
+      [['range-fov', 'range-fov-pause'], settings.fov],
+    ];
+    for (const [ids, value] of ranges) {
+      for (const id of ids) {
+        const range = this.container.querySelector<HTMLInputElement>(`#${id}`);
+        if (range && document.activeElement !== range) range.value = String(value);
+      }
     }
     const best = this.container.querySelector<HTMLElement>('#title-best');
     if (best) best.textContent = String(settings.bestScore);
@@ -779,6 +871,8 @@ export class Game {
     window.removeEventListener('orientationchange', this.handleResize);
     document.removeEventListener('visibilitychange', this.handleVisibility);
     window.removeEventListener('beforeunload', this.handleUnload);
+    this.canvas.removeEventListener('webglcontextlost', this.handleContextLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
     this.audio.dispose();
     this.fx?.dispose();
     this.enemyViews?.dispose();

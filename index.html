@@ -4,13 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#05070f" />
+    <meta name="color-scheme" content="dark" />
     <meta
       name="description"
       content="NEON RIFT: LAST LIGHT - a first-person 3D sci-fi arena survival shooter built with Three.js, TypeScript and Vite."
     />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NEON RIFT: LAST LIGHT" />
+    <meta
+      property="og:description"
+      content="Survive the waves, harvest energy, upgrade your rig. A free first-person 3D arena shooter that runs in your browser."
+    />
+    <meta property="og:url" content="https://juyel-dev.github.io/neon-rift-3d/" />
+    <meta name="twitter:card" content="summary" />
     <title>NEON RIFT: LAST LIGHT</title>
   </head>
   <body>
+    <noscript>
+      <p style="font:16px/1.5 system-ui,sans-serif;color:#9fe;background:#05070f;padding:2rem;margin:0">
+        NEON RIFT: LAST LIGHT is a 3D game and needs JavaScript. Please enable it and reload.
+      </p>
+    </noscript>
     <div id="app">
       <canvas id="scene" aria-label="Neon Rift 3D viewport"></canvas>
 
@@ -132,6 +147,14 @@
               <span>SENSITIVITY</span>
               <input id="range-sensitivity" class="range" type="range" min="0.0006" max="0.005" step="0.0002" value="0.0022" />
             </label>
+            <label class="setting">
+              <span>VOLUME</span>
+              <input id="range-volume" class="range" type="range" min="0" max="1" step="0.05" value="0.8" />
+            </label>
+            <label class="setting">
+              <span>FIELD OF VIEW</span>
+              <input id="range-fov" class="range" type="range" min="60" max="100" step="1" value="76" />
+            </label>
           </div>
 
           <p class="best-line">BEST SCORE <strong id="title-best">0</strong></p>
@@ -158,6 +181,14 @@
             <label class="setting">
               <span>SENSITIVITY</span>
               <input id="range-sensitivity-pause" class="range" type="range" min="0.0006" max="0.005" step="0.0002" />
+            </label>
+            <label class="setting">
+              <span>VOLUME</span>
+              <input id="range-volume-pause" class="range" type="range" min="0" max="1" step="0.05" />
+            </label>
+            <label class="setting">
+              <span>FIELD OF VIEW</span>
+              <input id="range-fov-pause" class="range" type="range" min="60" max="100" step="1" />
             </label>
           </div>
           <p class="note">Press <kbd>ESC</kbd> again to return to the fight.</p>
@@ -213,6 +244,10 @@
           <p class="note" id="loading-note">Building the rift...</p>
         </div>
       </section>
+
+      <div id="context-lost" class="context-lost" role="alert" hidden>
+        GRAPHICS CONTEXT LOST &mdash; RECOVERING&hellip;
+      </div>
 
       <section id="error-screen" class="screen" role="alert" hidden>
         <div class="screen-inner screen-narrow">

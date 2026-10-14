@@ -17,5 +17,15 @@ export default defineConfig({
     assetsDir: 'assets',
     sourcemap: false,
     chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        // Three.js changes rarely; keeping it in its own chunk means game
+        // updates don't force players to re-download the engine.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/three')) return 'three';
+          return undefined;
+        },
+      },
+    },
   },
 });

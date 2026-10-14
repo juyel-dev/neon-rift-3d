@@ -27,8 +27,6 @@ function wireSettings(game: Game, settings: SettingsStore): void {
   const soundTitle = element<HTMLButtonElement>('toggle-sound-title');
   const soundPause = element<HTMLButtonElement>('toggle-sound-pause');
   const quality = element<HTMLSelectElement>('select-quality');
-  const sensitivity = element<HTMLInputElement>('range-sensitivity');
-  const sensitivityPause = element<HTMLInputElement>('range-sensitivity-pause');
   const resume = element<HTMLButtonElement>('btn-resume');
   const restartPause = element<HTMLButtonElement>('btn-restart-pause');
   const quit = element<HTMLButtonElement>('btn-quit');
@@ -41,7 +39,6 @@ function wireSettings(game: Game, settings: SettingsStore): void {
   controls.hidden = true;
 
   start.addEventListener('click', () => {
-    settings.update({ soundEnabled: settings.get().soundEnabled });
     game.applySettings();
     game.startRun();
   });
@@ -53,10 +50,8 @@ function wireSettings(game: Game, settings: SettingsStore): void {
   });
 
   const toggleSound = (): void => {
-    const current = settings.get().soundEnabled;
-    const next = settings.update({ soundEnabled: !current }).soundEnabled;
-    if (game) game.applySettings();
-    void next;
+    settings.update({ soundEnabled: !settings.get().soundEnabled });
+    game.applySettings();
   };
   soundTitle.addEventListener('click', toggleSound);
   soundPause.addEventListener('click', toggleSound);
@@ -66,12 +61,19 @@ function wireSettings(game: Game, settings: SettingsStore): void {
     game.applySettings();
   });
 
-  const onSensitivity = (value: string): void => {
-    settings.update({ sensitivity: Number.parseFloat(value) });
-    game.applySettings();
+  // The title screen and the pause screen expose the same sliders; each pair
+  // writes to one setting and Game.applySettings() keeps both in sync.
+  const bindRange = (ids: string[], key: 'sensitivity' | 'volume' | 'fov'): void => {
+    for (const id of ids) {
+      element<HTMLInputElement>(id).addEventListener('input', (event) => {
+        settings.update({ [key]: Number.parseFloat((event.target as HTMLInputElement).value) });
+        game.applySettings();
+      });
+    }
   };
-  sensitivity.addEventListener('input', () => onSensitivity(sensitivity.value));
-  sensitivityPause.addEventListener('input', () => onSensitivity(sensitivityPause.value));
+  bindRange(['range-sensitivity', 'range-sensitivity-pause'], 'sensitivity');
+  bindRange(['range-volume', 'range-volume-pause'], 'volume');
+  bindRange(['range-fov', 'range-fov-pause'], 'fov');
 
   resume.addEventListener('click', () => game.resume());
   restartPause.addEventListener('click', () => game.restart());
@@ -79,20 +81,17 @@ function wireSettings(game: Game, settings: SettingsStore): void {
   restart.addEventListener('click', () => game.restart());
   toTitle.addEventListener('click', () => game.returnToTitle());
   relock.addEventListener('click', () => game.requestPointerLock());
-  skipUpgrade.addEventListener('click', () => {
-    // Skipping advances the wave through the simulation.
-    (game as unknown as { sim: { skipUpgrade(): boolean } }).sim.skipUpgrade();
-    game.applySettings();
-  });
+  skipUpgrade.addEventListener('click', () => game.skipUpgrade());
 
   // Keyboard access for the upgrade screen and menus.
   window.addEventListener('keydown', (event) => {
-    if (event.code === 'Digit1' || event.code === 'Digit2' || event.code === 'Digit3') {
+    if (event.repeat) return;
+    const upgradeOpen = document.getElementById('upgrade-screen')?.hidden === false;
+    if (upgradeOpen && (event.code === 'Digit1' || event.code === 'Digit2' || event.code === 'Digit3')) {
       const cards = document.querySelectorAll<HTMLElement>('#upgrade-cards .card');
-      const index = Number(event.code.slice(5)) - 1;
-      if (cards[index]) cards[index].click();
+      cards[Number(event.code.slice(5)) - 1]?.click();
     }
-    if (event.code === 'Enter' && !document.getElementById('title-screen')?.hidden) start.click();
+    if (event.code === 'Enter' && document.getElementById('title-screen')?.hidden === false) start.click();
   });
 }
 

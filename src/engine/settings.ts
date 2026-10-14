@@ -4,14 +4,23 @@ export type QualityLevel = 'low' | 'medium' | 'high';
 
 export interface Settings {
   soundEnabled: boolean;
+  /** Master volume, 0..1. */
+  volume: number;
+  /** Vertical field of view of the main camera, in degrees. */
+  fov: number;
   quality: QualityLevel;
   sensitivity: number;
   bestScore: number;
   runsPlayed: number;
 }
 
+export const SENSITIVITY_RANGE = { min: 0.0006, max: 0.005 } as const;
+export const FOV_RANGE = { min: 60, max: 100 } as const;
+
 export const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
+  volume: 0.8,
+  fov: 76,
   quality: 'medium',
   sensitivity: 0.0022,
   bestScore: 0,
@@ -20,17 +29,28 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = 'settings';
 
+/** Coerces any stored or incoming value into a valid, in-range Settings object. */
+export function sanitizeSettings(input: Partial<Settings>): Settings {
+  const merged = { ...DEFAULT_SETTINGS, ...input };
+  const quality: QualityLevel = merged.quality === 'low' || merged.quality === 'high' ? merged.quality : 'medium';
+  return {
+    soundEnabled: merged.soundEnabled !== false,
+    volume: clampNumber(merged.volume, 0, 1, DEFAULT_SETTINGS.volume),
+    fov: clampNumber(merged.fov, FOV_RANGE.min, FOV_RANGE.max, DEFAULT_SETTINGS.fov),
+    quality,
+    sensitivity: clampNumber(merged.sensitivity, SENSITIVITY_RANGE.min, SENSITIVITY_RANGE.max, DEFAULT_SETTINGS.sensitivity),
+    bestScore: Math.max(0, Math.floor(Number(merged.bestScore)) || 0),
+    runsPlayed: Math.max(0, Math.floor(Number(merged.runsPlayed)) || 0),
+  };
+}
+
 /** Persisted player preferences (sound, quality, sensitivity, best score). */
 export class SettingsStore {
   private settings: Settings;
 
   constructor() {
-    this.settings = { ...DEFAULT_SETTINGS, ...readStore<Partial<Settings>>(KEY, {}) };
-    this.settings.sensitivity = clampNumber(this.settings.sensitivity, 0.0006, 0.005, DEFAULT_SETTINGS.sensitivity);
-    this.settings.bestScore = Math.max(0, Math.floor(this.settings.bestScore) || 0);
-    this.settings.runsPlayed = Math.max(0, Math.floor(this.settings.runsPlayed) || 0);
-    if (this.settings.quality !== 'low' && this.settings.quality !== 'high') this.settings.quality = 'medium';
-    this.settings.soundEnabled = this.settings.soundEnabled !== false;
+    const stored = readStore<unknown>(KEY, {});
+    this.settings = sanitizeSettings(stored && typeof stored === 'object' ? (stored as Partial<Settings>) : {});
   }
 
   get(): Settings {
@@ -38,10 +58,7 @@ export class SettingsStore {
   }
 
   update(patch: Partial<Settings>): Settings {
-    this.settings = { ...this.settings, ...patch };
-    this.settings.sensitivity = clampNumber(this.settings.sensitivity, 0.0006, 0.005, DEFAULT_SETTINGS.sensitivity);
-    this.settings.bestScore = Math.max(0, Math.floor(this.settings.bestScore));
-    this.settings.runsPlayed = Math.max(0, Math.floor(this.settings.runsPlayed));
+    this.settings = sanitizeSettings({ ...this.settings, ...patch });
     writeStore(KEY, this.settings);
     return this.get();
   }

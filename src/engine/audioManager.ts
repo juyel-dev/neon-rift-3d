@@ -37,6 +37,7 @@ export class AudioManager {
   private musicStep = 0;
   private nextNoteTime = 0;
   private soundEnabled = true;
+  private volume = 1;
   private started = false;
   private lastPlayed = new Map<SoundName, number>();
   /** Guards against dozens of identical sounds firing on the same frame. */
@@ -77,7 +78,7 @@ export class AudioManager {
     this.started = true;
 
     this.masterGain = this.context.createGain();
-    this.masterGain.gain.value = this.soundEnabled ? MASTER_CEILING : 0;
+    this.masterGain.gain.value = this.targetGain();
     this.masterGain.connect(this.context.destination);
 
     this.sfxGain = this.context.createGain();
@@ -98,11 +99,25 @@ export class AudioManager {
     this.buildAmbient();
   }
 
+  /** Master volume in the range 0..1 (applied on top of the on/off switch). */
+  setVolume(volume: number): void {
+    this.volume = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1));
+    this.applyGain();
+  }
+
+  private targetGain(): number {
+    return this.soundEnabled ? MASTER_CEILING * this.volume : 0;
+  }
+
+  private applyGain(): void {
+    if (this.masterGain && this.context) {
+      this.masterGain.gain.setTargetAtTime(this.targetGain(), this.context.currentTime, 0.05);
+    }
+  }
+
   setEnabled(enabled: boolean): void {
     this.soundEnabled = enabled;
-    if (this.masterGain && this.context) {
-      this.masterGain.gain.setTargetAtTime(enabled ? MASTER_CEILING : 0, this.context.currentTime, 0.05);
-    }
+    this.applyGain();
     if (enabled) void this.resume();
   }
 
